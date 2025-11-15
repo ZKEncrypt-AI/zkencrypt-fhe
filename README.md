@@ -1,4 +1,4 @@
-## About
+## Abouts
 
 ### What is ZKEncrypt FHE
 
