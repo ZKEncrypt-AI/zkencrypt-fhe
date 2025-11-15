@@ -78,7 +78,6 @@ fn main() {
 ### Documentation
 
 - **[ZKEncrypt AI Documentation](https://zkencrypt-ai.gitbook.io/zkencrypt-ai)** - Complete guide to the ZKEncrypt ecosystem
-- **[Examples](./examples)** - Code examples and tutorials
 
 ### ZKEncrypt AI Ecosystem
 
