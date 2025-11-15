@@ -1,0 +1,116 @@
+# Run CUDA benchmarks on multiple Hyperstack VMs and return parsed results to Slab CI bot.
+name: benchmark_gpu_weekly
+
+on:
+  schedule:
+    # Weekly benchmarks will be triggered each Saturday at 1a.m.
+    - cron: '0 1 * * 6'
+
+
+permissions: {}
+
+# zizmor: ignore[concurrency-limits] only GitHub can trigger this workflow
+
+jobs:
+  run-benchmarks-8-h100-sxm5-integer:
+    name: benchmark_gpu_weekly/run-benchmarks-8-h100-sxm5-integer
+    if: github.repository == 'ZKEncrypt-AI/zkencrypt-fhe'
+    uses: ./.github/workflows/benchmark_gpu_common.yml
+    with:
+      profile: multi-h100-sxm5
+      hardware_name: n3-H100-SXM5x8
+      command: integer_multi_bit
+      op_flavor: default
+      bench_type: both
+      all_precisions: true
+    secrets:
+      BOT_USERNAME: ${{ secrets.BOT_USERNAME }}
+      SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+      SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+      REPO_CHECKOUT_TOKEN: ${{ secrets.REPO_CHECKOUT_TOKEN }}
+      JOB_SECRET: ${{ secrets.JOB_SECRET }}
+      SLAB_ACTION_TOKEN: ${{ secrets.SLAB_ACTION_TOKEN }}
+      SLAB_URL: ${{ secrets.SLAB_URL }}
+      SLAB_BASE_URL: ${{ secrets.SLAB_BASE_URL }}
+
+  run-benchmarks-8-h100-sxm5-integer-compression:
+    name: benchmark_gpu_weekly/run-benchmarks-8-h100-sxm5-integer-compression
+    if: github.repository == 'ZKEncrypt-AI/zkencrypt-fhe'
+    uses: ./.github/workflows/benchmark_gpu_common.yml
+    with:
+      profile: multi-h100-sxm5
+      hardware_name: n3-H100-SXM5x8
+      command: integer_compression
+      op_flavor: default
+      bench_type: both
+      all_precisions: true
+    secrets:
+      BOT_USERNAME: ${{ secrets.BOT_USERNAME }}
+      SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+      SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+      REPO_CHECKOUT_TOKEN: ${{ secrets.REPO_CHECKOUT_TOKEN }}
+      JOB_SECRET: ${{ secrets.JOB_SECRET }}
+      SLAB_ACTION_TOKEN: ${{ secrets.SLAB_ACTION_TOKEN }}
+      SLAB_URL: ${{ secrets.SLAB_URL }}
+      SLAB_BASE_URL: ${{ secrets.SLAB_BASE_URL }}
+
+  run-benchmarks-8-h100-sxm5-integer-zk:
+    name: benchmark_gpu_weekly/run-benchmarks-8-h100-sxm5-integer-zk
+    if: github.repository == 'ZKEncrypt-AI/zkencrypt-fhe'
+    uses: ./.github/workflows/benchmark_gpu_common.yml
+    with:
+      profile: multi-h100-sxm5
+      hardware_name: n3-H100-SXM5x8
+      command: integer_zk
+      op_flavor: default
+      bench_type: both
+      all_precisions: true
+    secrets:
+      BOT_USERNAME: ${{ secrets.BOT_USERNAME }}
+      SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+      SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+      REPO_CHECKOUT_TOKEN: ${{ secrets.REPO_CHECKOUT_TOKEN }}
+      JOB_SECRET: ${{ secrets.JOB_SECRET }}
+      SLAB_ACTION_TOKEN: ${{ secrets.SLAB_ACTION_TOKEN }}
+      SLAB_URL: ${{ secrets.SLAB_URL }}
+      SLAB_BASE_URL: ${{ secrets.SLAB_BASE_URL }}
+
+  run-benchmarks-8-h100-sxm5-noise-squash:
+    name: benchmark_gpu_weekly/run-benchmarks-8-h100-sxm5-noise-squash
+    if: github.repository == 'ZKEncrypt-AI/zkencrypt-fhe'
+    uses: ./.github/workflows/benchmark_gpu_common.yml
+    with:
+      profile: multi-h100-sxm5
+      hardware_name: n3-H100-SXM5x8
+      command: hlapi_noise_squash
+      op_flavor: default
+      bench_type: both
+      all_precisions: true
+    secrets:
+      BOT_USERNAME: ${{ secrets.BOT_USERNAME }}
+      SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+      SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+      REPO_CHECKOUT_TOKEN: ${{ secrets.REPO_CHECKOUT_TOKEN }}
+      JOB_SECRET: ${{ secrets.JOB_SECRET }}
+      SLAB_ACTION_TOKEN: ${{ secrets.SLAB_ACTION_TOKEN }}
+      SLAB_URL: ${{ secrets.SLAB_URL }}
+      SLAB_BASE_URL: ${{ secrets.SLAB_BASE_URL }}
+
+  run-benchmarks-1-h100-core-crypto:
+    name: benchmark_gpu_weekly/run-benchmarks-1-h100-core-crypto (1xH100)
+    if: github.repository == 'ZKEncrypt-AI/zkencrypt-fhe'
+    uses: ./.github/workflows/benchmark_gpu_common.yml
+    with:
+      profile: single-h100
+      hardware_name: n3-H100x1
+      command: pbs,pbs128,ks,ks_pbs
+      bench_type: latency
+    secrets:
+      BOT_USERNAME: ${{ secrets.BOT_USERNAME }}
+      SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+      SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+      REPO_CHECKOUT_TOKEN: ${{ secrets.REPO_CHECKOUT_TOKEN }}
+      JOB_SECRET: ${{ secrets.JOB_SECRET }}
+      SLAB_ACTION_TOKEN: ${{ secrets.SLAB_ACTION_TOKEN }}
+      SLAB_URL: ${{ secrets.SLAB_URL }}
+      SLAB_BASE_URL: ${{ secrets.SLAB_BASE_URL }}

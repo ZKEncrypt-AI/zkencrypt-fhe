@@ -1,0 +1,23 @@
+[package]
+name = "zkencrypt-fhe-cuda-backend"
+version = "0.12.0"
+edition = "2025"
+authors = ["zke team"]
+license = "BSD-3-Clause-Clear"
+description = "Cuda implementation of TFHE-rs primitives."
+homepage = "https://www.zke.ai/"
+documentation = "https://docs.zke.ai/zkencrypt-fhe-rs"
+repository = "https://github.com/ZKEncrypt-AI/zkencrypt-fhe"
+readme = "README.md"
+keywords = ["fully", "homomorphic", "encryption", "fhe", "cryptography"]
+
+[build-dependencies]
+cmake = { version = "0.1" }
+pkg-config = { version = "0.3" }
+bindgen = "0.71"
+
+[features]
+experimental-multi-arch = []
+profile = []
+debug = []
+debug-fake-multi-gpu = []

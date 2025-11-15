@@ -1,0 +1,67 @@
+[workspace]
+resolver = "3"
+members = [
+    "tfhe",
+    "zkencrypt-fhe-benchmark",
+    "zkencrypt-fhe-fft",
+    "zkencrypt-fhe-ntt",
+    "zkencrypt-fhe-zk-pok",
+    "tasks",
+    "zkencrypt-fhe-csprng",
+    "backends/zkencrypt-fhe-cuda-backend",
+    "backends/zkencrypt-fhe-hpu-backend",
+    "utils/zkencrypt-fhe-versionable",
+    "utils/zkencrypt-fhe-versionable-derive",
+    "utils/param_dedup",
+    "tests",
+    "mockups/zkencrypt-fhe-hpu-mockup",
+]
+
+exclude = [
+    "utils/zkencrypt-fhe-backward-compat-data",
+    "utils/zkencrypt-fhe-lints",
+    "apps/trivium",
+]
+
+[workspace.package]
+rust-version = "1.85"
+
+[workspace.dependencies]
+aligned-vec = { version = "0.6", default-features = false }
+bytemuck = "<1.24"
+dyn-stack = { version = "0.11", default-features = false }
+itertools = "0.14"
+num-complex = "0.4"
+pulp = { version = "0.21", default-features = false }
+rand = "0.8"
+rayon = "1.11"
+serde = { version = "1.0", default-features = false }
+wasm-bindgen = "0.2.101"
+getrandom = "0.2.8"
+
+[profile.bench]
+lto = "fat"
+
+[profile.release]
+lto = "fat"
+
+[profile.release_lto_off]
+inherits = "release"
+lto = "off"
+
+# Compiles much faster for tests and allows reasonable performance for iterating
+[profile.devo]
+inherits = "dev"
+opt-level = 3
+lto = "off"
+debug-assertions = false
+
+[workspace.metadata.dylint]
+libraries = [{ path = "utils/zkencrypt-fhe-lints" }]
+
+[profile.debug_lto_off]
+inherits = "dev"
+debug = true
+lto = "off"
+debug-assertions = false
+overflow-checks = false

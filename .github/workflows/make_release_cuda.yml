@@ -1,0 +1,238 @@
+name: make_release_cuda
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry-run"
+        type: boolean
+        default: true
+
+env:
+  ACTION_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+  SLACK_ICON: https://pbs.twimg.com/profile_images/1274014582265298945/OjBKP9kn_400x400.png
+  SLACK_USERNAME: ${{ secrets.BOT_USERNAME }}
+  SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+
+permissions: {}
+
+# zizmor: ignore[concurrency-limits] only ZKEncrypt AI organization members can trigger this workflow
+
+jobs:
+  verify-triggering-actor:
+    name: make_release_cuda/verify-triggering-actor
+    if: startsWith(github.ref, 'refs/tags/')
+    uses: ./.github/workflows/verify_triggering_actor.yml
+    secrets:
+      ALLOWED_TEAM: ${{ secrets.RELEASE_TEAM }}
+      READ_ORG_TOKEN: ${{ secrets.READ_ORG_TOKEN }}
+
+  setup-instance:
+    name: make_release_cuda/setup-instance
+    needs: verify-triggering-actor
+    runs-on: ubuntu-latest
+    outputs:
+      runner-name: ${{ steps.start-instance.outputs.label }}
+    steps:
+      - name: Start instance
+        id: start-instance
+        uses: zke-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        with:
+          mode: start
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          backend: aws
+          profile: gpu-build
+
+  package:
+    name: make_release_cuda/package
+    needs: setup-instance
+    runs-on: ${{ needs.setup-instance.outputs.runner-name }}
+    outputs:
+      hash: ${{ steps.hash.outputs.hash }}
+    strategy:
+      fail-fast: false
+      # explicit include-based build matrix, of known valid options
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            cuda: "12.2"
+            gcc: 9
+    env:
+      CUDA_PATH: /usr/local/cuda-${{ matrix.cuda }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: "false"
+          token: ${{ secrets.REPO_CHECKOUT_TOKEN }}
+
+      - name: Install latest stable
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # zizmor: ignore[stale-action-refs] this action doesn't create releases
+        with:
+          toolchain: stable
+
+      - name: Export CUDA variables
+        if: ${{ !cancelled() }}
+        run: |
+          echo "$CUDA_PATH/bin" >> "${GITHUB_PATH}"
+          {
+            echo "CUDA_PATH=$CUDA_PATH";
+            echo "LD_LIBRARY_PATH=$CUDA_PATH/lib:$LD_LIBRARY_PATH";
+            echo "CUDACXX=/usr/local/cuda-${CUDA_VERSION}/bin/nvcc";
+          } >> "${GITHUB_ENV}"
+        env:
+          CUDA_VERSION: ${{ matrix.cuda }}
+
+      # Specify the correct host compilers
+      - name: Export gcc and g++ variables
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo "CC=/usr/bin/gcc-${GCC_VERSION}";
+            echo "CXX=/usr/bin/g++-${GCC_VERSION}";
+            echo "CUDAHOSTCXX=/usr/bin/g++-${GCC_VERSION}";
+            echo "HOME=/home/ubuntu";
+          } >> "${GITHUB_ENV}"
+        env:
+          GCC_VERSION: ${{ matrix.gcc }}
+
+      - name: Prepare package
+        run: |
+          cargo package -p tfhe-cuda-backend
+
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: crate-tfhe-cuda-backend
+          path: target/package/*.crate
+
+      - name: generate hash
+        id: hash
+        run: cd target/package && echo "hash=$(sha256sum ./*.crate | base64 -w0)" >> "${GITHUB_OUTPUT}"
+
+  provenance:
+    name: make_release_cuda/provenance
+    if: ${{ !inputs.dry_run  }}
+    needs: [package]
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    permissions:
+      actions: read # Needed to detect the GitHub Actions environment
+      id-token: write # Needed to create the provenance via GitHub OIDC
+      contents: write # Needed to upload assets/artifacts
+    with:
+      # SHA-256 hashes of the Crate package.
+      base64-subjects: ${{ needs.package.outputs.hash }}
+
+  publish-cuda-release:
+    name: make_release_cuda/publish-cuda-release
+    needs: [setup-instance, package] # for comparing hashes
+    runs-on: ${{ needs.setup-instance.outputs.runner-name }}
+    permissions:
+      id-token: write # Needed for OIDC token exchange on crates.io
+    strategy:
+      fail-fast: false
+      # explicit include-based build matrix, of known valid options
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            cuda: "12.2"
+            gcc: 9
+    env:
+      CUDA_PATH: /usr/local/cuda-${{ matrix.cuda }}
+    steps:
+      - name: Install latest stable
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # zizmor: ignore[stale-action-refs] this action doesn't create releases
+        with:
+          toolchain: stable
+
+      - name: Export CUDA variables
+        if: ${{ !cancelled() }}
+        run: |
+          echo "$CUDA_PATH/bin" >> "${GITHUB_PATH}"
+          {
+            echo "CUDA_PATH=$CUDA_PATH";
+            echo "LD_LIBRARY_PATH=$CUDA_PATH/lib:$LD_LIBRARY_PATH";
+            echo "CUDACXX=/usr/local/cuda-${CUDA_VERSION}/bin/nvcc";
+          } >> "${GITHUB_ENV}"
+        env:
+          CUDA_VERSION: ${{ matrix.cuda }}
+
+      # Specify the correct host compilers
+      - name: Export gcc and g++ variables
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo "CC=/usr/bin/gcc-${GCC_VERSION}";
+            echo "CXX=/usr/bin/g++-${GCC_VERSION}";
+            echo "CUDAHOSTCXX=/usr/bin/g++-${GCC_VERSION}";
+            echo "HOME=/home/ubuntu";
+          } >> "${GITHUB_ENV}"
+        env:
+          GCC_VERSION: ${{ matrix.gcc }}
+
+      - name: Download artifact
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: crate-tfhe-cuda-backend
+          path: target/package
+
+      - name: Authenticate on registry
+        uses: rust-lang/crates-io-auth-action@b7e9a28eded4986ec6b1fa40eeee8f8f165559ec # v1.0.3
+        id: auth
+
+      - name: Publish crate.io package
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: |
+          # DRY_RUN expansion cannot be double quoted when variable contains empty string otherwise cargo publish 
+          # would fail. This is safe since DRY_RUN is handled in the env section above.
+          # shellcheck disable=SC2086
+          cargo publish -p tfhe-cuda-backend ${DRY_RUN}
+
+      - name: Generate hash
+        id: published_hash
+        run: cd target/package && echo "pub_hash=$(sha256sum ./*.crate | base64 -w0)" >> "${GITHUB_OUTPUT}"
+
+      - name: Slack notification (hashes comparison)
+        if: ${{ needs.package.outputs.hash != steps.published_hash.outputs.pub_hash }}
+        continue-on-error: true
+        uses: rtCamp/action-slack-notify@e31e87e03dd19038e411e38ae27cbad084a90661 # v2.3.3
+        env:
+          SLACK_COLOR: failure
+          SLACK_MESSAGE: "SLSA tfhe-cuda-backend crate - hash comparison failure: (${{ env.ACTION_RUN_URL }})"
+
+      - name: Slack Notification
+        if: ${{ failure() || (cancelled() && github.event_name != 'pull_request') }}
+        continue-on-error: true
+        uses: rtCamp/action-slack-notify@e31e87e03dd19038e411e38ae27cbad084a90661 # v2.3.3
+        env:
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_MESSAGE: "tfhe-cuda-backend release finished with status: ${{ job.status }}. (${{ env.ACTION_RUN_URL }})"
+
+  teardown-instance:
+    name: make_release_cuda/teardown-instance
+    if: ${{ always() && needs.setup-instance.result == 'success' }}
+    needs: [setup-instance, publish-cuda-release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stop instance
+        id: stop-instance
+        uses: zke-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        with:
+          mode: stop
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          label: ${{ needs.setup-instance.outputs.runner-name }}
+
+      - name: Slack Notification
+        if: ${{ failure() }}
+        continue-on-error: true
+        uses: rtCamp/action-slack-notify@e31e87e03dd19038e411e38ae27cbad084a90661
+        env:
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_MESSAGE: "Instance teardown (publish-cuda-release) finished with status: ${{ job.status }}. (${{ env.ACTION_RUN_URL }})"

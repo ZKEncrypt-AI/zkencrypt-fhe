@@ -1,0 +1,25 @@
+[package]
+name = "zkencrypt-fhe-lints"
+version = "0.1.0"
+description = "Project specific lints for TFHE-rs"
+edition = "2025"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+clippy_utils = { git = "https://github.com/rust-lang/rust-clippy", rev = "334fb906aef13d20050987b13448f37391bb97a2" }
+dylint_linting = "4.1.0"
+
+[dev-dependencies]
+dylint_testing = "4.1.0"
+serde = { version = "1.0", features = ["derive"] }
+zkencrypt-fhe-versionable = { version = "0.6.2", path = "../zkencrypt-fhe-versionable" }
+
+[package.metadata.rust-analyzer]
+rustc_private = true
+
+[[example]]
+name = "ui"
+path = "ui/main.rs"

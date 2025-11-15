@@ -1,0 +1,40 @@
+[package]
+name = "zkencrypt-fhe-csprng"
+version = "0.7.1"
+edition = "2025"
+license = "BSD-3-Clause-Clear"
+description = "Cryptographically Secure PRNG used in the TFHE-rs library."
+homepage = "https://zk-labs.network"
+documentation = "https://docs.zke.ai/zkencrypt-fhe-rs"
+repository = "https://github.com/ZKEncrypt-AI/zkencrypt-fhe"
+readme = "README.md"
+keywords = ["fully", "homomorphic", "encryption", "fhe", "cryptography"]
+rust-version.workspace = true
+
+[dependencies]
+aes = "0.8.2"
+rayon = { workspace = true, optional = true }
+getrandom = { workspace = true }
+serde = "1.0.226"
+zkencrypt-fhe-versionable = { version = "0.6.2", path = "../utils/zkencrypt-fhe-versionable" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2.133"
+
+[dev-dependencies]
+rand = { workspace = true }
+criterion = "0.5.1"
+clap = "=4.5.30"
+
+[features]
+parallel = ["rayon"]
+software-prng = []
+
+[[bench]]
+name = "benchmark"
+path = "benches/benchmark.rs"
+harness = false
+
+[[example]]
+name = "generate"
+path = "examples/generate.rs"

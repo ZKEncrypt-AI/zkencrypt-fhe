@@ -1,0 +1,224 @@
+# Run WASM client benchmarks on an instance and return parsed results to Slab CI bot.
+name: benchmark_wasm_client
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  schedule:
+    # Weekly benchmarks will be triggered each Saturday at 1a.m.
+    - cron: '0 1 * * 6'
+
+env:
+  CARGO_TERM_COLOR: always
+  RESULTS_FILENAME: parsed_benchmark_results_${{ github.sha }}.json
+  ACTION_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  RUST_BACKTRACE: "full"
+  RUST_MIN_STACK: "8388608"
+  SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+  SLACK_ICON: https://pbs.twimg.com/profile_images/1274014582265298945/OjBKP9kn_400x400.png
+  SLACK_USERNAME: ${{ secrets.BOT_USERNAME }}
+  SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+
+
+permissions: {}
+
+# zizmor: ignore[concurrency-limits] only ZKEncrypt AI organization members and GitHub can trigger this workflow
+
+jobs:
+  should-run:
+    name: benchmark_wasm_client/should-run
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' && github.repository == 'ZKEncrypt-AI/zkencrypt-fhe') ||
+      (github.event_name == 'push' && github.repository == 'ZKEncrypt-AI/zkencrypt-fhe')
+    permissions:
+      pull-requests: read  # Needed to check for file change
+    outputs:
+      wasm_bench: ${{ steps.changed-files.outputs.wasm_bench_any_changed }}
+    steps:
+      - name: Checkout tfhe-rs
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          fetch-depth: 0
+          persist-credentials: 'false'
+          token: ${{ secrets.REPO_CHECKOUT_TOKEN }}
+
+      - name: Check for file changes
+        id: changed-files
+        uses: tj-actions/changed-files@24d32ffd492484c1d75e0c0b894501ddb9d30d62 # v47.0.0
+        with:
+          files_yaml: |
+            wasm_bench:
+              - tfhe/Cargo.toml
+              - tfhe-csprng/**
+              - tfhe-zk-pok/**
+              - tfhe/src/**
+              - '!tfhe/src/c_api/**'
+              - tfhe/web_wasm_parallel_tests/**
+              - .github/workflows/wasm_client_benchmark.yml
+
+  setup-instance:
+    name: benchmark_wasm_client/setup-instance
+    if: github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' && github.repository == 'ZKEncrypt-AI/zkencrypt-fhe') ||
+      (github.event_name == 'push' && github.repository == 'ZKEncrypt-AI/zkencrypt-fhe' && needs.should-run.outputs.wasm_bench)
+    needs: should-run
+    runs-on: ubuntu-latest
+    outputs:
+      runner-name: ${{ steps.start-instance.outputs.label }}
+    steps:
+      - name: Start instance
+        id: start-instance
+        uses: zke-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        with:
+          mode: start
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          backend: aws
+          profile: cpu-small
+
+  wasm-client-benchmarks:
+    name: benchmark_wasm_client/wasm-client-benchmarks
+    needs: setup-instance
+    if: needs.setup-instance.result != 'skipped'
+    runs-on: ${{ needs.setup-instance.outputs.runner-name }}
+    strategy:
+      max-parallel: 1
+      matrix:
+        browser: [ chrome, firefox ]
+    steps:
+      - name: Checkout tfhe-rs repo with tags
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          fetch-depth: 0
+          persist-credentials: 'false'
+          token: ${{ secrets.REPO_CHECKOUT_TOKEN }}
+
+      - name: Get benchmark details
+        run: |
+          COMMIT_DATE=$(git --no-pager show -s --format=%cd --date=iso8601-strict "${SHA}");
+          {
+            echo "BENCH_DATE=$(date --iso-8601=seconds)";
+            echo "COMMIT_DATE=${COMMIT_DATE}";
+            echo "COMMIT_HASH=$(git describe --tags --dirty)";
+          } >> "${GITHUB_ENV}"
+        env:
+          SHA: ${{ github.sha }}
+
+      - name: Install rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # zizmor: ignore[stale-action-refs] this action doesn't create releases
+        with:
+          toolchain: nightly
+
+      - name: Get Node version
+        run: |
+          echo "NODE_VERSION=$(make node_version)" >> "${GITHUB_ENV}"
+
+      - name: Node cache restoration
+        id: node-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 #v4.3.0
+        with:
+          path: |
+            ~/.nvm
+            ~/.npm
+          key: node-${{ env.NODE_VERSION }}
+
+      - name: Install Node
+        if: steps.node-cache.outputs.cache-hit != 'true'
+        run: |
+          make install_node
+
+      - name: Node cache save
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 #v4.3.0
+        if: steps.node-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.nvm
+            ~/.npm
+          key: node-${{ env.NODE_VERSION }}
+
+      - name: Install web resources
+        run: |
+          make install_"${BROWSER}"_browser
+          make install_"${BROWSER}"_web_driver
+        env:
+          BROWSER: ${{ matrix.browser }}
+
+      - name: Run benchmarks
+        run: |
+          make bench_web_js_api_parallel_"${BROWSER}"_ci
+        env:
+          BROWSER: ${{ matrix.browser }}
+
+      - name: Parse results
+        run: |
+          make parse_wasm_benchmarks
+          python3 ./ci/benchmark_parser.py tfhe-benchmark/wasm_pk_gen.csv "${RESULTS_FILENAME}" \
+          --database tfhe_rs \
+          --hardware "m6i.4xlarge" \
+          --project-version "${COMMIT_HASH}" \
+          --branch "${REF_NAME}" \
+          --commit-date "${COMMIT_DATE}" \
+          --bench-date "${BENCH_DATE}" \
+          --key-gen
+          rm tfhe-benchmark/wasm_pk_gen.csv
+        env:
+          REF_NAME: ${{ github.ref_name }}
+
+      - name: Upload parsed results artifact
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+        with:
+          name: ${{ github.sha }}_wasm_${{ matrix.browser }}
+          path: ${{ env.RESULTS_FILENAME }}
+
+      - name: Checkout Slab repo
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          repository: zke-ai/slab
+          path: slab
+          persist-credentials: 'false'
+          token: ${{ secrets.REPO_CHECKOUT_TOKEN }}
+
+      - name: Send data to Slab
+        shell: bash
+        run: |
+          python3 slab/scripts/data_sender.py "${RESULTS_FILENAME}" "${JOB_SECRET}" \
+          --slab-url "${SLAB_URL}"
+        env:
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+          SLAB_URL: ${{ secrets.SLAB_URL }}
+
+      - name: Slack Notification
+        if: ${{ failure() || (cancelled() && github.event_name != 'pull_request') }}
+        continue-on-error: true
+        uses: rtCamp/action-slack-notify@e31e87e03dd19038e411e38ae27cbad084a90661
+        env:
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_MESSAGE: "WASM benchmarks (${{ matrix.browser }}) finished with status: ${{ job.status }}. (${{ env.ACTION_RUN_URL }})"
+
+  teardown-instance:
+    name: benchmark_wasm_client/teardown-instance
+    if: ${{ always() && needs.setup-instance.result == 'success' }}
+    needs: [ setup-instance, wasm-client-benchmarks ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stop instance
+        id: stop-instance
+        uses: zke-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        with:
+          mode: stop
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          label: ${{ needs.setup-instance.outputs.runner-name }}
+
+      - name: Slack Notification
+        if: ${{ failure() }}
+        continue-on-error: true
+        uses: rtCamp/action-slack-notify@e31e87e03dd19038e411e38ae27cbad084a90661
+        env:
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_MESSAGE: "Instance teardown (wasm-client-benchmarks) finished with status: ${{ job.status }}. (${{ env.ACTION_RUN_URL }})"

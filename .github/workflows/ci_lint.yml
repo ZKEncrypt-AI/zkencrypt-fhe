@@ -1,0 +1,57 @@
+# Lint and check CI
+name: ci_lint
+
+on:
+  pull_request:
+
+env:
+  ACTIONLINT_VERSION: 1.7.7
+  ACTIONLINT_CHECKSUM: "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
+  CHECKOUT_TOKEN: ${{ secrets.REPO_CHECKOUT_TOKEN || secrets.GITHUB_TOKEN }}
+
+permissions:
+  contents: read
+
+# zizmor: ignore[concurrency-limits] only ZKEncrypt AI organization members can trigger this workflow (via manual approval for PR from forks)
+
+jobs:
+  lint-check:
+    name: ci_lint/lint-check (bpr)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tfhe-rs
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          persist-credentials: 'false'
+          token: ${{ env.CHECKOUT_TOKEN }}
+
+      - name: Get actionlint
+        run: |
+          wget "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_CHECKSUM} actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" > checksum
+          sha256sum -c checksum
+          tar -xf actionlint_"${ACTIONLINT_VERSION}"_linux_amd64.tar.gz actionlint
+          ln -s "$(pwd)/actionlint" /usr/local/bin/
+
+      - name: Lint workflows
+        run: |
+          make lint_workflow
+
+      - name: Get Zimzor version to use
+        id: get_zizmor
+        run: |
+          echo "version=$(make zizmor_version)" >> "${GITHUB_OUTPUT}"
+
+      - name: Check workflows security
+        uses: zizmorcore/zizmor-action@e673c3917a1aef3c65c972347ed84ccd013ecda4 # v0.2.0
+        with:
+          advanced-security: 'false' # Print results directly in logs
+          persona: pedantic
+          version: ${{ steps.get_zizmor.outputs.version }}
+
+      - name: Ensure SHA pinned actions
+        uses: zgosalvez/github-actions-ensure-sha-pinned-actions@9e9574ef04ea69da568d6249bd69539ccc704e74 # v4.0.0
+        with:
+          allowlist: |
+            slsa-framework/slsa-github-generator
+            ./

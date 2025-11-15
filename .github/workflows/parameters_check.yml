@@ -1,0 +1,61 @@
+# Perform a security check on all the cryptographic parameters set
+name: parameters_check
+
+env:
+  CARGO_TERM_COLOR: always
+  ACTION_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  RUSTFLAGS: "-C target-cpu=native"
+
+on:
+  push:
+    branches:
+      - "main"
+  workflow_dispatch:
+
+permissions: {}
+
+# zizmor: ignore[concurrency-limits] only ZKEncrypt AI organization members and GitHub can trigger this workflow
+
+jobs:
+  params-curves-security-check:
+    name: parameters_check/params-curves-security-check
+    runs-on: large_ubuntu_16-22.04
+    steps:
+      - name: Checkout tfhe-rs
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          persist-credentials: 'false'
+          token: ${{ secrets.REPO_CHECKOUT_TOKEN }}
+
+      - name: Checkout lattice-estimator
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          repository: malb/lattice-estimator
+          path: lattice_estimator
+          ref: '352ddaf4a288a0543f5d9eb588d2f89c7acec463'
+          persist-credentials: 'false'
+
+      - name: Install Sage
+        run: |
+          sudo apt update
+          sudo apt install -y sagemath
+
+      - name: Collect parameters
+        run: |
+          CARGO_PROFILE=devo make write_params_to_file
+
+      - name: Perform security check
+        run: |
+          PYTHONPATH=lattice_estimator sage ci/lattice_estimator.sage
+
+      - name: Slack Notification
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: rtCamp/action-slack-notify@e31e87e03dd19038e411e38ae27cbad084a90661
+        env:
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+          SLACK_ICON: https://pbs.twimg.com/profile_images/1274014582265298945/OjBKP9kn_400x400.png
+          SLACK_MESSAGE: "Security check for parameters finished with status: ${{ job.status }}. (${{ env.ACTION_RUN_URL }})"
+          SLACK_USERNAME: ${{ secrets.BOT_USERNAME }}
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}

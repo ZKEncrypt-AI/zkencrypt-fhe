@@ -1,0 +1,22 @@
+[package]
+name = "tests"
+version = "0.1.0"
+edition = "2025"
+publish = false
+
+[dev-dependencies]
+tfhe = { path = "../tfhe" }
+zkencrypt-fhe-versionable = { path = "../utils/zkencrypt-fhe-versionable" }
+zkencrypt-fhe-backward-compat-data = { path = "../utils/zkencrypt-fhe-backward-compat-data" }
+rand = { workspace = true }
+cargo_toml = "0.22"
+
+
+[[test]]
+name = "backward_compatibility_tests"
+path = "backward_compatibility_tests.rs"
+
+[features]
+shortint = ["tfhe/shortint"]
+integer = ["shortint", "tfhe/integer"]
+zk-pok = ["tfhe/zk-pok"]

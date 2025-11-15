@@ -1,0 +1,30 @@
+[package]
+name = "generate_1_5"
+edition = "2024"
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+clap.workspace = true
+
+# TFHE-rs
+tfhe = { features = [
+    "boolean",
+    "integer",
+    "shortint",
+    "zk-pok",
+    "experimental-force_fft_algo_dif4",
+], path = "../../../../tfhe" }
+zkencrypt-fhe-versionable = { path = "../../../zkencrypt-fhe-versionable" }
+
+# Uncomment this and remove the lines above once the current zkencrypt-fhe-rs version has been released
+# tfhe = { git = "https://github.com/ZKEncrypt-AI/zkencrypt-fhe.git", tag = "zkencrypt-fhe-rs-1.5.0", features = [
+#     "boolean",
+#     "integer",
+#     "shortint",
+#     "zk-pok",
+#     "experimental-force_fft_algo_dif4",
+# ] }
+# zkencrypt-fhe-versionable = { git = "https://github.com/ZKEncrypt-AI/zkencrypt-fhe.git", tag = "zkencrypt-fhe-rs-1.5.0" }
+
+zkencrypt-fhe-backward-compat-data = { path = "../.." }

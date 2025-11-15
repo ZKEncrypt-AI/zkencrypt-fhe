@@ -1,0 +1,245 @@
+[package]
+name = "tfhe"
+version = "1.5.0"
+edition = "2025"
+readme = "../README.md"
+keywords = ["fully", "homomorphic", "encryption", "fhe", "cryptography"]
+homepage = "https://zk-labs.network"
+documentation = "https://docs.zke.ai/zkencrypt-fhe-rs"
+repository = "https://github.com/ZKEncrypt-AI/zkencrypt-fhe"
+license = "BSD-3-Clause-Clear"
+description = "TFHE-rs is a fully homomorphic encryption (FHE) library that implements zke's variant of TFHE."
+build = "build.rs"
+exclude = [
+    "/docs/",
+    "/c_api_tests/",
+    "/CMakeLists.txt",
+    "/js_on_wasm_tests/",
+    "/web_wasm_parallel_tests/",
+]
+rust-version.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dev-dependencies]
+rand = { workspace = true }
+rand_distr = "0.4.3"
+criterion = "0.5.1"
+doc-comment = "0.3.3"
+serde_json = "1.0.94"
+# clap has to be pinned as its minimum supported rust version
+# changes often between minor releases, which breaks our CI
+clap = { version = "=4.5.30", features = ["derive"] }
+# Used in user documentation
+fs2 = { version = "0.4.3" }
+statrs = "0.18"
+# Begin regex-engine deps
+test-case = "3.1.0"
+combine = "4.6.6"
+env_logger = "0.11"
+log = "0.4.19"
+hex = "0.4.3"
+# End regex-engine deps
+# Used in noise-measurements
+csv = "1.3.0"
+
+# Begin hpu-demo deps
+# Enable to have hpu execution trace
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+clap-num = { version = "1.1.1" }
+# End hpu-demo deps
+
+[build-dependencies]
+cbindgen = { version = "0.28", optional = true }
+
+[dependencies]
+zkencrypt-fhe-csprng = { version = "0.7.0", path = "../zkencrypt-fhe-csprng", features = [
+    "parallel",
+] }
+serde = { workspace = true, features = ["default", "derive"] }
+rayon = { workspace = true }
+bincode = "1.3.3"
+zkencrypt-fhe-fft = { version = "0.9.0", path = "../zkencrypt-fhe-fft", features = [
+    "serde",
+    "fft128",
+] }
+zkencrypt-fhe-ntt = { version = "0.6.1", path = "../zkencrypt-fhe-ntt" }
+pulp = { workspace = true, features = ["default"] }
+zkencrypt-fhe-cuda-backend = { version = "0.12.0", path = "../backends/zkencrypt-fhe-cuda-backend", optional = true }
+aligned-vec = { workspace = true, features = ["default", "serde"] }
+dyn-stack = { workspace = true, features = ["default"] }
+paste = "1.0.7"
+fs2 = { version = "0.4.3", optional = true }
+# Used for OPRF in shortint and rerand
+sha3 = { version = "0.10", optional = true }
+blake3 = { version = "1.8", optional = true }
+
+itertools = { workspace = true }
+rand_core = { version = "0.6.4", features = ["std"] }
+strum = { version = "0.27", features = ["derive"], optional = true }
+zkencrypt-fhe-zk-pok = { version = "0.8.0", path = "../zkencrypt-fhe-zk-pok", optional = true }
+zkencrypt-fhe-versionable = { version = "0.0.1", path = "../utils/zkencrypt-fhe-versionable" }
+
+# wasm deps
+wasm-bindgen = { workspace = true, features = [
+    "serde-serialize",
+], optional = true }
+wasm-bindgen-rayon = { version = "1.3.0", optional = true }
+js-sys = { version = "0.3", optional = true }
+console_error_panic_hook = { version = "0.1.7", optional = true }
+serde-wasm-bindgen = { version = "0.6.0", optional = true }
+getrandom = { workspace = true, optional = true }
+bytemuck = { workspace = true }
+
+zkencrypt-fhe-hpu-backend = { version = "0.3", path = "../backends/zkencrypt-fhe-hpu-backend", optional = true }
+
+[features]
+boolean = []
+shortint = ["dep:sha3", "dep:blake3"]
+integer = ["shortint", "dep:strum"]
+strings = ["integer"]
+internal-keycache = ["dep:fs2"]
+gpu = ["dep:zkencrypt-fhe-cuda-backend", "shortint"]
+gpu-experimental-multi-arch = [
+    "gpu",
+    "zkencrypt-fhe-cuda-backend/experimental-multi-arch",
+]
+gpu-profile = ["gpu", "zkencrypt-fhe-cuda-backend/profile"]
+gpu-debug = ["gpu", "zkencrypt-fhe-cuda-backend/debug"]
+gpu-debug-fake-multi-gpu = ["gpu", "zkencrypt-fhe-cuda-backend/debug-fake-multi-gpu"]
+zk-pok = ["dep:zkencrypt-fhe-zk-pok"]
+# Start Fpga Hpu features
+hpu = ["dep:zkencrypt-fhe-hpu-backend", "shortint", "integer"]
+hpu-xrt = ["hpu", "zkencrypt-fhe-hpu-backend/hw-xrt"]
+hpu-v80 = ["hpu", "zkencrypt-fhe-hpu-backend/hw-v80"]
+hpu-debug = ["hpu", "zkencrypt-fhe-hpu-backend/io-dump"]
+# End Fpga Hpu features
+
+# Adds more FheUint/FheInt types to the HL
+extended-types = []
+
+pbs-stats = []
+noise-asserts = []
+
+# Experimental section
+experimental = []
+experimental-force_fft_algo_dif4 = []
+# End experimental section
+
+__c_api = ["dep:cbindgen"]
+# Can be used in some situations to reduce build time with GPU
+__force_skip_cbindgen = []
+boolean-c-api = ["boolean", "__c_api"]
+shortint-c-api = ["shortint", "__c_api"]
+high-level-c-api = ["boolean-c-api", "shortint-c-api", "integer"]
+
+__wasm_api = [
+    "dep:wasm-bindgen",
+    "dep:js-sys",
+    "dep:console_error_panic_hook",
+    "dep:serde-wasm-bindgen",
+    "dep:getrandom",
+    "getrandom/js",
+]
+boolean-client-js-wasm-api = ["boolean", "__wasm_api"]
+shortint-client-js-wasm-api = ["shortint", "__wasm_api"]
+integer-client-js-wasm-api = ["integer", "shortint-client-js-wasm-api"]
+high-level-client-js-wasm-api = [
+    "boolean-client-js-wasm-api",
+    "integer-client-js-wasm-api",
+]
+parallel-wasm-api = ["dep:wasm-bindgen-rayon"]
+
+nightly-avx512 = ["zkencrypt-fhe-fft/nightly", "zkencrypt-fhe-ntt/nightly", "pulp/nightly"]
+
+# Private features
+__profiling = []
+
+software-prng = ["zkencrypt-fhe-csprng/software-prng"]
+
+[package.metadata.docs.rs]
+# TODO: manage builds for docs.rs based on their documentation https://docs.rs/about
+features = [
+    "boolean",
+    "shortint",
+    "integer",
+    "gpu",
+    "zk-pok",
+    "software-prng",
+    "strings",
+    "hpu",
+    "extended-types",
+]
+rustdoc-args = ["--html-in-header", "katex-header.html"]
+
+# Examples used as tools
+
+[[example]]
+name = "generates_test_keys"
+path = "examples/utilities/generates_test_keys.rs"
+required-features = ["boolean", "shortint", "internal-keycache"]
+
+[[example]]
+name = "micro_bench_and"
+path = "examples/utilities/micro_bench_and.rs"
+required-features = ["boolean"]
+
+[[example]]
+name = "write_params_to_file"
+path = "examples/utilities/params_to_file.rs"
+required-features = ["boolean", "shortint", "internal-keycache", "hpu"]
+
+[[example]]
+name = "print_doc_bench_parameters"
+path = "examples/utilities/print_doc_bench_parameters.rs"
+required-features = ["shortint", "internal-keycache"]
+
+# Real use-case examples
+
+[[example]]
+name = "dark_market"
+required-features = ["integer", "internal-keycache"]
+
+[[example]]
+name = "regex_engine"
+required-features = ["integer"]
+
+[[example]]
+name = "sha256_bool"
+required-features = ["boolean"]
+
+[[example]]
+name = "sha256"
+required-features = ["integer"]
+
+[[example]]
+name = "pbs_count"
+required-features = ["integer", "pbs-stats"]
+
+# Start of Hpu related section
+[[example]]
+name = "hpu_hlapi"
+path = "examples/hpu/hlapi.rs"
+required-features = ["hpu"]
+
+[[example]]
+name = "hpu_matmul"
+path = "examples/hpu/matmul.rs"
+required-features = ["hpu"]
+
+[[example]]
+name = "hpu_bench"
+path = "examples/hpu/bench.rs"
+required-features = ["hpu"]
+# End of Hpu related section
+
+[lib]
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(tarpaulin)',
+    'cfg(dylint_lib, values(any()))',
+    # This is a bug/unwanted behavior from wasm_bindgen macro, for now warn instead of erroring
+    'cfg(wasm_bindgen_unstable_test_coverage)',
+] }

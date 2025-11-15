@@ -1,0 +1,181 @@
+# Test tfhe-ntt
+name: cargo_test_ntt
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+env:
+  CARGO_TERM_COLOR: always
+  IS_PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
+  CHECKOUT_TOKEN: ${{ secrets.REPO_CHECKOUT_TOKEN || secrets.GITHUB_TOKEN }}
+  SECRETS_AVAILABLE: ${{ secrets.JOB_SECRET != '' }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref }}${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  should-run:
+    name: cargo_test_ntt/should-run
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read  # Needed to check for file change
+    outputs:
+      ntt_test: ${{ env.IS_PULL_REQUEST == 'false' || steps.changed-files.outputs.ntt_any_changed }}
+    steps:
+      - name: Checkout tfhe-rs
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          fetch-depth: 0
+          persist-credentials: "false"
+          token: ${{ env.CHECKOUT_TOKEN }}
+
+      - name: Check for file changes
+        id: changed-files
+        uses: tj-actions/changed-files@24d32ffd492484c1d75e0c0b894501ddb9d30d62 # v47.0.0
+        with:
+          files_yaml: |
+            ntt:
+              - tfhe/Cargo.toml
+              - Makefile
+              - tfhe-ntt/**
+              - '.github/workflows/cargo_test_ntt.yml'
+
+  setup-instance:
+    name: cargo_test_ntt/setup-instance
+    needs: should-run
+    if: needs.should-run.outputs.ntt_test == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix_os: ${{ steps.set-os-matrix.outputs.matrix_os }}
+      runner-name: ${{ steps.start-remote-instance.outputs.label }}
+    steps:
+      - name: Start remote instance
+        id: start-remote-instance
+        if: env.SECRETS_AVAILABLE == 'true'
+        uses: zke-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        with:
+          mode: start
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          backend: aws
+          profile: cpu-small
+
+      - name: Set os matrix
+        id: set-os-matrix
+        env:
+          SLAB_INSTANCE: ${{ steps.start-remote-instance.outputs.label }}
+        run: |
+          INSTANCE_TO_USE="${SLAB_INSTANCE:-ubuntu-latest}"
+          echo "matrix_os=[\"${INSTANCE_TO_USE}\", \"macos-latest\", \"windows-latest\"]" >> "$GITHUB_OUTPUT"
+
+  cargo-tests-ntt:
+    name: cargo_test_ntt/cargo-tests-ntt
+    needs: [should-run, setup-instance]
+    if: needs.should-run.outputs.ntt_test == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: ${{fromJson(needs.setup-instance.outputs.matrix_os)}}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          persist-credentials: "false"
+          token: ${{ env.CHECKOUT_TOKEN }}
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Test debug
+        run: make test_ntt
+
+      - name: Test no-std
+        run: make test_ntt_no_std
+
+  cargo-tests-ntt-nightly:
+    name: cargo_test_ntt/cargo-tests-ntt-nightly
+    needs: [should-run, setup-instance]
+    if: needs.should-run.outputs.ntt_test == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: ${{fromJson(needs.setup-instance.outputs.matrix_os)}}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          persist-credentials: "false"
+          token: ${{ env.CHECKOUT_TOKEN }}
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
+        with:
+          toolchain: nightly
+          override: true
+
+      - name: Test nightly
+        run: make test_ntt_nightly
+
+      - name: Test no-std nightly
+        run: make test_ntt_no_std_nightly
+
+  cargo-tests-ntt-successful:
+    name: cargo_test_ntt/cargo-tests-ntt-successful (bpr)
+    needs: [should-run, cargo-tests-ntt, cargo-tests-ntt-nightly]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tests do not need to run
+        if: needs.should-run.outputs.ntt_test == 'false'
+        run: |
+          echo "tfhe-ntt files haven't changed tests don't need to run"
+
+      - name: Check all tests success
+        if: needs.should-run.outputs.ntt_test == 'true' &&
+          needs.cargo-tests-ntt.result == 'success' &&
+          needs.cargo-tests-ntt-nightly.result == 'success'
+        run: |
+          echo "All tfhe-ntt tests passed"
+
+      - name: Check tests failure
+        if: needs.should-run.outputs.ntt_test == 'true' &&
+          (needs.cargo-tests-ntt.result != 'success' ||
+          needs.cargo-tests-ntt-nightly.result != 'success')
+        run: |
+          echo "Some tfhe-ntt tests failed"
+          exit 1
+
+  teardown-instance:
+    name: cargo_test_ntt/teardown-instance
+    if: ${{ always() && needs.setup-instance.result == 'success' }}
+    needs: [setup-instance, cargo-tests-ntt-successful]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stop remote instance
+        id: stop-instance
+        if: env.SECRETS_AVAILABLE == 'true'
+        uses: zke-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        with:
+          mode: stop
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          label: ${{ needs.setup-instance.outputs.runner-name }}
+
+      - name: Slack Notification
+        if: ${{ failure() }}
+        continue-on-error: true
+        uses: rtCamp/action-slack-notify@e31e87e03dd19038e411e38ae27cbad084a90661
+        env:
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_MESSAGE: "Instance teardown (cargo-tests-ntt) finished with status: ${{ job.status }}. (${{ env.ACTION_RUN_URL }})"
